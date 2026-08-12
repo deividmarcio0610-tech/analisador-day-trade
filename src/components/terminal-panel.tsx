@@ -26,6 +26,7 @@ export function TerminalPanel({ cwd }: { cwd?: string }) {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [pending, setPending] = useState<{ commandLine: string; reasons: string[] } | null>(null);
+  const [currentProcess, setCurrentProcess] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,12 +39,41 @@ export function TerminalPanel({ cwd }: { cwd?: string }) {
         // ignore malformed frame
       }
     };
+    // The process id only exists once the process has started, so it arrives on
+    // the stream rather than in the POST response — that is what cancel targets.
+    const onStart = (event: MessageEvent<string>): void => {
+      try {
+        const payload = JSON.parse(event.data) as { id: string };
+        setCurrentProcess(payload.id);
+      } catch {
+        // ignore malformed frame
+      }
+    };
+    const onEnd = (): void => setCurrentProcess(null);
+
     source.addEventListener('data', onData as EventListener);
+    source.addEventListener('start', onStart as EventListener);
+    source.addEventListener('end', onEnd as EventListener);
     return () => {
       source.removeEventListener('data', onData as EventListener);
+      source.removeEventListener('start', onStart as EventListener);
+      source.removeEventListener('end', onEnd as EventListener);
       source.close();
     };
   }, []);
+
+  const cancel = async (): Promise<void> => {
+    if (!currentProcess) return;
+    try {
+      await api.del('/api/terminal', { processId: currentProcess });
+      setLines((previous) => [...previous, { stream: 'system', text: 'cancel requested (SIGTERM)' }]);
+    } catch (error) {
+      setLines((previous) => [
+        ...previous,
+        { stream: 'stderr', text: error instanceof Error ? error.message : String(error) },
+      ]);
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -183,6 +213,11 @@ export function TerminalPanel({ cwd }: { cwd?: string }) {
           placeholder={busy ? 'running…' : 'npm run test, git status, python -m pytest …'}
           className="vc-mono flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-faint"
         />
+        {busy && currentProcess && (
+          <button type="button" className="vc-button vc-button-danger py-1" onClick={() => void cancel()}>
+            Cancel
+          </button>
+        )}
       </div>
     </div>
   );
