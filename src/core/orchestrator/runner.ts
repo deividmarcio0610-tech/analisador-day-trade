@@ -1,6 +1,7 @@
 import type { Job, RunMode } from '@/core/types';
-import { createJob, emit, setJobState } from './job-store';
-import { runOrchestration } from './orchestrator';
+import { createJob, emit, eventsSince, getJob, setJobState } from './job-store';
+import { runOrchestration, type ResumeState } from './orchestrator';
+import { listPatches } from './patch-service';
 import { runTournament } from './tournament';
 import { profileFor } from './modes';
 import { currentProject } from '@/core/db/project-repo';
@@ -22,6 +23,104 @@ export interface StartJobInput {
   focusFiles?: string[];
   applyAndVerify?: boolean;
   checks?: CheckKind[];
+}
+
+/**
+ * CRASH RECOVERY
+ *
+ * Rebuilds what an interrupted run already produced from its persisted events
+ * and stored patches, so a resume pays only for the stages that never finished.
+ * Nothing is inferred: if an output was not persisted, it is simply redone.
+ */
+export function recoverState(jobId: string): ResumeState | null {
+  const events = eventsSince(jobId, 0);
+  if (events.length === 0) return null;
+
+  let planText = '';
+  let reviewFeedback = '';
+  let round = 1;
+
+  for (const event of events) {
+    if (event.type === 'plan') {
+      const plan = event.payload as {
+        summary?: string;
+        requirements?: Array<{ id: string; statement: string; verification: string }>;
+        steps?: Array<{ id: string; title: string; detail: string; files: string[] }>;
+      };
+      planText = [
+        `SUMMARY: ${plan.summary ?? ''}`,
+        `REQUIREMENTS:\n${(plan.requirements ?? [])
+          .map((requirement) => `- ${requirement.id}: ${requirement.statement} (verify: ${requirement.verification})`)
+          .join('\n')}`,
+        `STEPS:\n${(plan.steps ?? [])
+          .map((step) => `- ${step.id} ${step.title}: ${step.detail} [${step.files.join(', ')}]`)
+          .join('\n')}`,
+      ].join('\n\n');
+    } else if (event.type === 'review') {
+      const payload = event.payload as {
+        round?: number;
+        findings?: Array<{ severity: string; category: string; file?: string; summary: string; detail: string }>;
+      };
+      reviewFeedback = (payload.findings ?? [])
+        .map((finding) => `- [${finding.severity}/${finding.category}] ${finding.file ?? ''} ${finding.summary}: ${finding.detail}`)
+        .join('\n');
+      round = Math.max(round, (payload.round ?? 1) + 1);
+    } else if (event.type === 'patch') {
+      const payload = event.payload as { round?: number };
+      round = Math.max(round, payload.round ?? 1);
+    }
+  }
+
+  const patches = listPatches(jobId);
+  const latest = patches[0] ?? null;
+
+  return {
+    planText,
+    operations: latest?.operations ?? [],
+    patchId: latest?.id ?? null,
+    reviewFeedback,
+    round,
+  };
+}
+
+/** Continue an interrupted job instead of paying for it again. */
+export function resumeJob(jobId: string): { job: Job; resumed: boolean; reason: string } {
+  const job = getJob(jobId);
+  if (!job) throw new Error(`Job not found: ${jobId}`);
+  if (job.state !== 'INTERRUPTED') {
+    return { job, resumed: false, reason: `Job is ${job.state}, only INTERRUPTED jobs can be resumed` };
+  }
+
+  const blocked = [roleUnavailableReason('builder'), roleUnavailableReason('reviewer')].filter(
+    (reason): reason is string => reason !== null,
+  );
+  if (blocked.length > 0) {
+    const message = [...new Set(blocked)].join(' · ');
+    emit(job.id, 'job.error', { message, blocked: true });
+    setJobState(job.id, 'BLOCKED', message);
+    return { job, resumed: false, reason: message };
+  }
+
+  const resume = recoverState(jobId) ?? undefined;
+  emit(job.id, 'log', {
+    level: 'INFO',
+    message: resume
+      ? `Resuming: ${resume.operations.length} file operation(s) and ${resume.planText ? 'a plan' : 'no plan'} recovered.`
+      : 'Resuming from the beginning: nothing had been persisted yet.',
+  });
+
+  const run = profileFor(job.mode).tournament
+    ? runTournament({ job })
+    : runOrchestration({ job, resume });
+
+  void run.catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('runner', `resumed job ${job.id} crashed: ${message}`, { taskId: job.id });
+    emit(job.id, 'job.error', { message });
+    setJobState(job.id, 'FAILED', message);
+  });
+
+  return { job, resumed: true, reason: 'resumed' };
 }
 
 export function startJob(input: StartJobInput): Job {

@@ -1,5 +1,6 @@
 import { fail, handleError, ok } from '../../_lib/http';
 import { getJob, eventsSince, cancelJob, isJobActive, setJobState } from '@/core/orchestrator/job-store';
+import { resumeJob } from '@/core/orchestrator/runner';
 import { listPatches } from '@/core/orchestrator/patch-service';
 import { listMessages } from '@/core/agents/agent-runtime';
 import { listAgentRuns } from '@/core/db/agent-run-repo';
@@ -28,6 +29,21 @@ export async function GET(
     });
   } catch (error) {
     return handleError('api.jobs.detail', error);
+  }
+}
+
+/** Resume an interrupted job, reusing whatever it already produced. */
+export async function POST(
+  _request: Request,
+  context: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  try {
+    const { id } = await context.params;
+    if (!getJob(id)) return fail(`Job not found: ${id}`, 404);
+    const result = resumeJob(id);
+    return ok(result, { status: result.resumed ? 202 : 409 });
+  } catch (error) {
+    return handleError('api.jobs.resume', error);
   }
 }
 

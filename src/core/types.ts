@@ -68,7 +68,9 @@ export type JobState =
   | 'PASSED'
   | 'FAILED'
   | 'CANCELLED'
-  | 'BLOCKED';
+  | 'BLOCKED'
+  /** The process died mid-run. The work is not lost and the job can be resumed. */
+  | 'INTERRUPTED';
 
 export type LogLevel =
   | 'INFO'

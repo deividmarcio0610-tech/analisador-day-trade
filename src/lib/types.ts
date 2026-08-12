@@ -131,6 +131,8 @@ export interface SystemStatus {
   git: GitStatusView;
   processes: Array<{ id: string; commandLine: string; risk: string; startedAt: string }>;
   recentJobs: Job[];
+  interruptedJobs: Job[];
+  watchdog: { stalled: Array<{ jobId: string; state: string; idleMs: number }> };
   serverTime: string;
 }
 

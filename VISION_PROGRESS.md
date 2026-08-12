@@ -45,8 +45,15 @@ Update after each module. `npm run verify` = lint → typecheck → test → bui
 - **Test prioritization** (`src/core/tools/test-selection.ts`): runs the tests
   covering the changed modules first; never claims a narrowed run replaces the
   full suite.
+- **Crash recovery**: an in-flight job becomes INTERRUPTED (not FAILED) after a
+  restart; `recoverState` rebuilds plan, patch and review feedback from the
+  persisted events, and Resume continues from there. Resuming with the models
+  down blocks instead of discarding the work.
+- **Watchdog** (`src/core/orchestrator/watchdog.ts`): a job with no event for
+  15 minutes is cancelled and marked BLOCKED with the reason. The sweep runs on
+  the status poll the UI already makes.
 
-LAST_BUILD: PASS — lint, typecheck, 130 tests, build.
+LAST_BUILD: PASS — lint, typecheck, 138 tests, build.
 
 ## CURRENT
 
@@ -60,11 +67,9 @@ started; none of it is faked in the UI.
 - **Code intelligence (AST/LSP)**: the index is lexical. Real definitions,
   references, call hierarchy and rename impact need a TS program or an LSP
   client. The graph and index are the seam it plugs into.
-- **Crash recovery**: interrupted jobs are marked FAILED, not resumed. Resuming
-  needs a per-stage checkpoint in the job record.
-- **Watchdog / heartbeat**: no stalled-job detector yet; retries are bounded but
-  a hung provider call only ends on its timeout.
 - **Model fallback chain** and provider health-driven routing.
+- **Heartbeat screen** aggregating every subsystem (the pieces exist per screen;
+  the watchdog covers jobs only).
 - **Agent evaluation / Vision benchmark**: a fixed problem set to compare a new
   model or prompt against the previous one.
 - **Prompt registry versioning**: prompts are already centralised in
@@ -94,5 +99,5 @@ started; none of it is faked in the UI.
 
 1. Get the DeepSeek model id, set it in `.env.local` or Settings.
 2. On the VPS: `npm run dev` + `npm run validate:ai`.
-3. Then, in this order: crash recovery + watchdog, model fallback chain, AST
-   code intelligence, benchmark, plugin/MCP, Phase 11 (Playwright/E2E).
+3. Then, in this order: model fallback chain, AST code intelligence, benchmark,
+   plugin/MCP, Phase 11 (Playwright/E2E).

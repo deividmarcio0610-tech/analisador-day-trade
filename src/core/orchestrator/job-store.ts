@@ -86,7 +86,13 @@ export function setJobState(id: string, state: JobState, error?: string | null):
 }
 
 export function isTerminal(state: JobState): boolean {
-  return state === 'PASSED' || state === 'FAILED' || state === 'CANCELLED' || state === 'BLOCKED';
+  return (
+    state === 'PASSED' ||
+    state === 'FAILED' ||
+    state === 'CANCELLED' ||
+    state === 'BLOCKED' ||
+    state === 'INTERRUPTED'
+  );
 }
 
 export function emit(jobId: string, type: JobEventType, payload: unknown): JobEvent {
@@ -161,15 +167,32 @@ function toJob(row: Record<string, unknown>): Job {
 }
 
 /**
- * Jobs that were RUNNING when the server stopped can never resume, so mark them
- * as failed on boot instead of leaving a permanently spinning row in the UI.
+ * A job that was in flight when the process died is INTERRUPTED, not FAILED:
+ * its plan, patch and review are already persisted, so the work is recoverable.
+ * The UI offers Resume; nothing restarts on its own.
  */
 export function reconcileOrphanJobs(): number {
   const info = getDb()
     .prepare(
-      `UPDATE tasks SET state = 'FAILED', finished_at = ?, error = 'Interrupted by server restart'
+      `UPDATE tasks SET state = 'INTERRUPTED', finished_at = ?, error = 'Interrupted by a server restart — resumable'
        WHERE state IN ('RUNNING', 'QUEUED', 'WAITING_REVIEW', 'TESTING')`,
     )
     .run(nowIso());
   return Number(info.changes);
+}
+
+/** Jobs that stopped mid-run and still have recoverable work. */
+export function interruptedJobs(limit = 20): Job[] {
+  return getDb()
+    .prepare("SELECT * FROM tasks WHERE state = 'INTERRUPTED' ORDER BY created_at DESC LIMIT ?")
+    .all(limit)
+    .map(toJob);
+}
+
+/** Timestamp of the newest event, used by the watchdog to spot a stalled job. */
+export function lastEventAt(jobId: string): string | null {
+  const row = getDb()
+    .prepare('SELECT created_at FROM job_events WHERE task_id = ? ORDER BY id DESC LIMIT 1')
+    .get(jobId);
+  return row ? asText(row.created_at) : null;
 }

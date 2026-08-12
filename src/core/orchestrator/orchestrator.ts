@@ -45,6 +45,19 @@ export interface RunRequest {
   /** Apply the accepted patch and run the verification suite afterwards. */
   applyAndVerify?: boolean;
   checks?: CheckKind[];
+  /**
+   * Work recovered from a previous, interrupted attempt. Stages whose output is
+   * already persisted are reused instead of being paid for twice.
+   */
+  resume?: ResumeState;
+}
+
+export interface ResumeState {
+  planText: string;
+  operations: PatchOperation[];
+  patchId: string | null;
+  reviewFeedback: string;
+  round: number;
 }
 
 export interface RunOutcome {
@@ -174,8 +187,12 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
     }
 
     // ---- Planning -------------------------------------------------------
-    let planText = '';
-    if (profile.plan) {
+    let planText = request.resume?.planText ?? '';
+    if (planText.length > 0) {
+      stage(job.id, 'planning', 'done', 'reused from the interrupted run');
+      say(job.id, 'Resumed: the plan from the interrupted run was reused.');
+    }
+    if (profile.plan && planText.length === 0) {
       stage(job.id, 'planning', 'active');
       const plan = await runPlanner({
         user: `${baseContext}\n\n# REQUEST\n${job.prompt}`,
@@ -196,15 +213,22 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
           .join('\n')}`,
       ].join('\n\n');
       stage(job.id, 'planning', 'done', `${plan.value.steps.length} step(s)`);
-    } else {
+    } else if (planText.length === 0) {
       stage(job.id, 'planning', 'skipped', `${job.mode} mode goes straight to implementation`);
     }
 
     // ---- Build / Review rounds -----------------------------------------
-    let operations: PatchOperation[] = [];
+    let operations: PatchOperation[] = request.resume?.operations ?? [];
     let review: ReviewResult | null = null;
-    let round = 0;
-    let reviewFeedback = '';
+    let round = request.resume ? Math.max(0, request.resume.round - 1) : 0;
+    let reviewFeedback = request.resume?.reviewFeedback ?? '';
+    if (request.resume) {
+      outcome.patchId = request.resume.patchId;
+      say(
+        job.id,
+        `Resumed from round ${request.resume.round} with ${operations.length} recovered file operation(s).`,
+      );
+    }
 
     while (round < maxRounds) {
       round += 1;

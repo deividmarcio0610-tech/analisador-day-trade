@@ -7,7 +7,8 @@ import { gitStatus } from '@/core/tools/git';
 import { workspaceRoot } from '@/core/paths';
 import { currentProject } from '@/core/db/project-repo';
 import { listRunningProcesses } from '@/core/tools/process-runner';
-import { listJobs, reconcileOrphanJobs } from '@/core/orchestrator/job-store';
+import { interruptedJobs, listJobs, reconcileOrphanJobs } from '@/core/orchestrator/job-store';
+import { sweepStalledJobs } from '@/core/orchestrator/watchdog';
 import { singleton } from '@/core/util/singleton';
 
 export const dynamic = 'force-dynamic';
@@ -16,8 +17,10 @@ export const runtime = 'nodejs';
 /** Header/status feed: providers, agents, workspace, git and active work. */
 export async function GET(): Promise<Response> {
   try {
-    // First touch of the API after a restart cleans up jobs that cannot resume.
+    // First touch after a restart marks in-flight jobs INTERRUPTED (recoverable).
     singleton('orphan-reconcile', () => reconcileOrphanJobs());
+    // The UI polls this endpoint, which is also when a stalled job is caught.
+    const stalled = sweepStalledJobs();
 
     const project = currentProject();
     // The polled header only probes the endpoint; model completions are verified
@@ -46,6 +49,8 @@ export async function GET(): Promise<Response> {
       git,
       processes: listRunningProcesses(),
       recentJobs: listJobs(10),
+      interruptedJobs: interruptedJobs(10),
+      watchdog: { stalled },
       serverTime: new Date().toISOString(),
     });
   } catch (error) {

@@ -46,6 +46,13 @@ function CouncilScreen() {
     void jobs.refresh();
   };
 
+  // An interrupted job kept its plan, patch and review; resuming reuses them.
+  const resume = async (): Promise<void> => {
+    if (!selected) return;
+    await api.post(`/api/jobs/${selected}`).catch(() => undefined);
+    void jobs.refresh();
+  };
+
   const activeJob = jobs.data?.jobs.find((job) => job.id === selected) ?? null;
 
   return (
@@ -57,7 +64,12 @@ function CouncilScreen() {
         <Panel
           title="Jobs"
           actions={
-            activeJob && !['PASSED', 'FAILED', 'CANCELLED', 'BLOCKED'].includes(activeJob.state) ? (
+            activeJob?.state === 'INTERRUPTED' ? (
+              <button type="button" className="vc-button vc-button-primary" onClick={() => void resume()}>
+                Resume
+              </button>
+            ) : activeJob &&
+              !['PASSED', 'FAILED', 'CANCELLED', 'BLOCKED', 'INTERRUPTED'].includes(activeJob.state) ? (
               <button type="button" className="vc-button vc-button-danger" onClick={() => void cancel()}>
                 Cancel
               </button>
