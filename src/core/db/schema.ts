@@ -192,4 +192,49 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_logs_created ON logs(id DESC)`,
     ],
   },
+  {
+    version: 2,
+    name: 'repository-index-and-model-cache',
+    statements: [
+      // Incremental repository index: a file is only re-parsed when its hash moves.
+      `CREATE TABLE IF NOT EXISTS file_index (
+        path TEXT PRIMARY KEY,
+        hash TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        language TEXT NOT NULL,
+        symbols TEXT NOT NULL,
+        imports TEXT NOT NULL,
+        indexed_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_file_index_hash ON file_index(hash)`,
+      // Reusable model answers, invalidated by the content they were derived from.
+      `CREATE TABLE IF NOT EXISTS model_cache (
+        key TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        model TEXT NOT NULL,
+        response TEXT NOT NULL,
+        context_hash TEXT NOT NULL,
+        prompt_tokens INTEGER,
+        completion_tokens INTEGER,
+        hits INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        last_used_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_model_cache_used ON model_cache(last_used_at DESC)`,
+      // Per-task token accounting, so a budget can be enforced and reported.
+      `CREATE TABLE IF NOT EXISTS token_usage (
+        id INTEGER PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        model TEXT NOT NULL,
+        prompt_tokens INTEGER NOT NULL,
+        completion_tokens INTEGER NOT NULL,
+        estimated INTEGER NOT NULL,
+        cached INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_token_usage_task ON token_usage(task_id)`,
+    ],
+  },
 ];

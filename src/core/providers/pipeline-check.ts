@@ -96,6 +96,9 @@ export async function runPipelineCheck(
       user: `${TASK}\n\nThere is no existing code to reuse. Produce the file.`,
       taskId,
       round: 1,
+      // A connection test must reach the model. An answer served from cache
+      // would prove the cache works, not that the endpoint does.
+      useCache: false,
       signal: options.signal,
     });
 
@@ -143,6 +146,7 @@ export async function runPipelineCheck(
       ].join('\n'),
       taskId,
       round: 1,
+      useCache: false,
       signal: options.signal,
     });
 

@@ -35,8 +35,18 @@ Update after each module. `npm run verify` = lint → typecheck → test → bui
   `/api/ai/test`, `npm run validate:ai`.
 - **Reasoning models**: `<think>` blocks stripped before JSON parsing (qwen3,
   deepseek-r1).
+- **Repository index** (`src/core/context/repo-index.ts`): incremental, hash
+  gated, stores symbols + imports; a second pass re-parses nothing.
+- **Token budget manager** (`src/core/orchestrator/token-budget.ts`): LOW /
+  NORMAL / HIGH / EXTREME drive context size and round count per mode; usage is
+  recorded per call and estimates are flagged as estimates.
+- **Model cache** (`src/core/providers/model-cache.ts`): reuses an answer only
+  while the files behind it are unchanged; connection tests bypass it.
+- **Test prioritization** (`src/core/tools/test-selection.ts`): runs the tests
+  covering the changed modules first; never claims a narrowed run replaces the
+  full suite.
 
-LAST_BUILD: PASS — lint, typecheck, 115 tests, build.
+LAST_BUILD: PASS — lint, typecheck, 130 tests, build.
 
 ## CURRENT
 
@@ -44,6 +54,25 @@ Waiting on one real value to validate against the user's GPU.
 
 ## PENDING
 
+Advanced layers requested, in the user's own priority order. Nothing below is
+started; none of it is faked in the UI.
+
+- **Code intelligence (AST/LSP)**: the index is lexical. Real definitions,
+  references, call hierarchy and rename impact need a TS program or an LSP
+  client. The graph and index are the seam it plugs into.
+- **Crash recovery**: interrupted jobs are marked FAILED, not resumed. Resuming
+  needs a per-stage checkpoint in the job record.
+- **Watchdog / heartbeat**: no stalled-job detector yet; retries are bounded but
+  a hung provider call only ends on its timeout.
+- **Model fallback chain** and provider health-driven routing.
+- **Agent evaluation / Vision benchmark**: a fixed problem set to compare a new
+  model or prompt against the previous one.
+- **Prompt registry versioning**: prompts are already centralised in
+  `src/core/agents/prompts.ts`; they are not versioned or benchmarked.
+- **Plugin system / MCP / tool registry / permission profiles / sandbox**.
+- **Definition of Done config**, requirement traceability, artifact store,
+  SBOM/licences, auto-bisect, incident memory, `/selfcheck`, safe
+  self-development, export/import, backup, command palette, global search.
 - **Phase 11 — Playwright / E2E / visual regression**: not implemented. The test
   engine detects and runs Playwright if the project has it, but Vision does not
   drive a browser itself. Reported as NOT CONFIGURED, not faked.
@@ -65,5 +94,5 @@ Waiting on one real value to validate against the user's GPU.
 
 1. Get the DeepSeek model id, set it in `.env.local` or Settings.
 2. On the VPS: `npm run dev` + `npm run validate:ai`.
-3. If both roles are ONLINE and TEAM/STREAMING/FAILOVER pass, continue to
-   Phase 11 (Playwright/E2E) and the AUTOPILOT loop.
+3. Then, in this order: crash recovery + watchdog, model fallback chain, AST
+   code intelligence, benchmark, plugin/MCP, Phase 11 (Playwright/E2E).

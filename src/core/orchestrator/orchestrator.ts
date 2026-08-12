@@ -27,6 +27,8 @@ import { runVerificationSuite, type CheckKind } from '@/core/tools/verification'
 import { getOrchestratorConfig } from '@/core/config/config';
 import { logger } from '@/core/logging/logger';
 import { renderImpact } from '@/core/context/impact';
+import { budgetForMode, usageForTask, budgetExceeded } from './token-budget';
+import { refreshIndex } from '@/core/context/repo-index';
 
 /**
  * ORCHESTRATOR
@@ -67,7 +69,8 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
   const { job } = request;
   const profile = profileFor(job.mode);
   const config = getOrchestratorConfig();
-  const maxRounds = Math.min(profile.maxRounds, config.maxRounds);
+  const budget = budgetForMode(job.mode);
+  const maxRounds = Math.min(profile.maxRounds, config.maxRounds, budget.maxRounds);
   const controller = new AbortController();
   registerController(job.id, controller);
 
@@ -86,17 +89,21 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
 
     // ---- Context -------------------------------------------------------
     stage(job.id, 'context', 'active');
+    // The index is incremental, so this is cheap on an unchanged repository and
+    // it is what keeps the cache honest about which files an answer came from.
+    await refreshIndex();
     const bundle = await buildContext({
       query: job.prompt,
       focusFiles: request.focusFiles,
-      budgetChars: profile.contextBudget,
+      budgetChars: Math.min(profile.contextBudget, budget.contextChars),
     });
     const contextText = renderContext(bundle);
+    const contextFiles = bundle.files.map((file) => file.path);
     stage(
       job.id,
       'context',
       'done',
-      `${bundle.files.length} file(s), ${bundle.totalChars}/${bundle.budgetChars} chars`,
+      `${bundle.files.length} file(s), ${bundle.totalChars}/${bundle.budgetChars} chars · budget ${budget.level}`,
     );
 
     // ---- Analysis (memory) ---------------------------------------------
@@ -113,6 +120,7 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
         user: `${baseContext}\n\n# REQUEST\n${job.prompt}`,
         taskId: job.id,
         round: 1,
+        contextFiles,
         signal: controller.signal,
         onDelta: (delta) => emit(job.id, 'agent.delta', { role: 'planner', delta }),
       });
@@ -145,6 +153,7 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
         user: `${baseContext}\n\n# PROBLEM\n${job.prompt}`,
         taskId: job.id,
         round: 1,
+        contextFiles,
         signal: controller.signal,
         onDelta: (delta) => emit(job.id, 'agent.delta', { role: 'reviewer', delta }),
       });
@@ -172,6 +181,7 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
         user: `${baseContext}\n\n# REQUEST\n${job.prompt}`,
         taskId: job.id,
         round: 1,
+        contextFiles,
         signal: controller.signal,
         onDelta: (delta) => emit(job.id, 'agent.delta', { role: 'planner', delta }),
       });
@@ -217,6 +227,7 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
         user: builderPrompt,
         taskId: job.id,
         round,
+        contextFiles,
         signal: controller.signal,
         onDelta: (delta) => emit(job.id, 'agent.delta', { role: 'builder', delta }),
       });
@@ -276,6 +287,7 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
           .join('\n\n'),
         taskId: job.id,
         round,
+        contextFiles,
         challenge: profile.challengeReview,
         signal: controller.signal,
         onDelta: (delta) => emit(job.id, 'agent.delta', { role: 'reviewer', delta }),
@@ -305,6 +317,15 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
       );
 
       if (review.decision !== 'REJECTED' && blockers.length === 0) break;
+
+      if (budgetExceeded(job.id, budget)) {
+        say(
+          job.id,
+          `Token budget for ${budget.level} spent (${usageForTask(job.id).totalTokens} tokens) — stopping after round ${round}.`,
+          'WARNING',
+        );
+        break;
+      }
 
       if (round >= maxRounds) {
         say(job.id, `Review still rejecting after ${maxRounds} round(s).`, 'WARNING');
@@ -385,9 +406,18 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
           : 'WAITING_REVIEW';
     setJobState(job.id, finalState);
 
+    const usage = usageForTask(job.id);
+    emit(job.id, 'log', {
+      level: 'INFO',
+      message:
+        `budget ${budget.level}: ${usage.totalTokens} token(s) over ${usage.calls} call(s)` +
+        `${usage.cachedCalls > 0 ? `, ${usage.cachedCalls} served from cache` : ''}` +
+        `${usage.partlyEstimated ? ' (partly estimated — the provider did not report counts)' : ''}`,
+    });
     outcome.summary = [
       `verdict ${report.verdict} (score ${report.score})`,
       `rounds ${outcome.rounds}`,
+      `${usage.totalTokens} tokens`,
       outcome.applied ? 'patch applied' : 'patch pending approval',
     ].join(' · ');
     emit(job.id, 'job.done', { summary: outcome.summary, verdict: report.verdict });
