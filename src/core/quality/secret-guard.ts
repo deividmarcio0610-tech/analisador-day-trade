@@ -46,6 +46,13 @@ const RULES: SecretRule[] = [
 
 const PLACEHOLDER = /(process\.env|import\.meta\.env|\$\{|<your|xxx+|placeholder|example|changeme|dummy|test|fake|\*{4,})/i;
 
+/** A line that declares a detection pattern is a scanner rule, not a leaked secret. */
+const RULE_DECLARATION = /\bpattern\s*:\s*\/|new RegExp\(/;
+
+function isTestFile(filePath: string): boolean {
+  return /(^|\/)(tests?|__tests__|fixtures?)\//.test(`/${filePath}`) || /\.(test|spec)\.[tj]sx?$/.test(filePath);
+}
+
 export function maskSecret(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length <= 8) return '*'.repeat(trimmed.length);
@@ -55,9 +62,14 @@ export function maskSecret(value: string): string {
 export function scanTextForSecrets(text: string, filePath = ''): SecretFinding[] {
   const findings: SecretFinding[] = [];
   const lines = text.split('\n');
+  // Fixtures in test files are the common case, so they are reported at low
+  // confidence rather than dropped: a real key can still be committed there.
+  const inTests = isTestFile(filePath);
+
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     if (line.length > 2000) continue;
+    if (RULE_DECLARATION.test(line)) continue;
     for (const rule of RULES) {
       const match = rule.pattern.exec(line);
       if (!match) continue;
@@ -68,7 +80,7 @@ export function scanTextForSecrets(text: string, filePath = ''): SecretFinding[]
         line: index + 1,
         kind: rule.kind,
         masked: maskSecret(value),
-        confidence: rule.confidence,
+        confidence: inTests ? 'low' : rule.confidence,
       });
     }
   }

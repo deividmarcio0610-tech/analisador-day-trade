@@ -89,8 +89,12 @@ export async function buildContext(request: ContextRequest): Promise<ContextBund
     (a, b) => order.indexOf(a[1]) - order.indexOf(b[1]),
   );
 
+  // Below this, a file contributes noise rather than context, so it is skipped
+  // and reported instead of being sliced into an unreadable fragment.
+  const MIN_USEFUL_CHARS = 400;
+
   for (const [file, reason] of entries) {
-    if (used >= budget) {
+    if (budget - used < MIN_USEFUL_CHARS) {
       skipped.push(file);
       continue;
     }

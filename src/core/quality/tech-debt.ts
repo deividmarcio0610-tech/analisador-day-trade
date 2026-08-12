@@ -101,7 +101,10 @@ export async function analyzeTechnicalDebt(root = workspaceRoot()): Promise<Debt
         node.importedBy === 0 &&
         node.layer !== 'config' &&
         node.layer !== 'test' &&
-        !/\/(page|layout|route|index)\.[tj]sx?$/.test(`/${node.id}`) &&
+        // Declaration files, framework entry points and app routes are reached by
+        // tooling rather than by an import, so they are never orphans.
+        !node.id.endsWith('.d.ts') &&
+        !/\/(page|layout|route|index|middleware|not-found|error|loading)\.[tj]sx?$/.test(`/${node.id}`) &&
         !node.id.startsWith('src/app/'),
     )
     .map((node) => node.id);

@@ -108,6 +108,26 @@ const RULES: Rule[] = [
   },
 ];
 
+function isTestFile(filePath: string): boolean {
+  return (
+    /(^|\/)(tests?|__tests__|fixtures?)\//.test(`/${filePath}`) || /\.(test|spec)\.[tj]sx?$/.test(filePath)
+  );
+}
+
+/** Comments, rule declarations and descriptive fields carry prose, not behaviour. */
+export function isProseLine(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    trimmed.startsWith('//') ||
+    trimmed.startsWith('*') ||
+    trimmed.startsWith('/*') ||
+    trimmed.startsWith('#') ||
+    /\bpattern\s*:\s*\//.test(trimmed) ||
+    /new RegExp\(/.test(trimmed) ||
+    /^(detail|summary|reason|description|message|label|title|placeholder)\s*:/.test(trimmed)
+  );
+}
+
 export async function runSecurityReview(root = workspaceRoot()): Promise<SecurityReport> {
   const files = await walkFiles('.', {
     root,
@@ -132,11 +152,16 @@ export async function runSecurityReview(root = workspaceRoot()): Promise<Securit
 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? '';
+      // These rules match code. A line that only describes code — a comment, a
+      // detection pattern, or a documentation string — is not a finding.
+      if (isProseLine(line)) continue;
       for (const rule of RULES) {
         if (rule.appliesTo && !rule.appliesTo(relative)) continue;
         if (!rule.pattern.test(line)) continue;
         findings.push({
-          severity: rule.severity,
+          // Matches inside test files are usually fixtures, so they are reported
+          // at low severity rather than dropped — a test can still ship a real problem.
+          severity: isTestFile(relative) ? 'low' : rule.severity,
           category: rule.category,
           path: relative,
           line: index + 1,
@@ -166,7 +191,7 @@ export async function runSecurityReview(root = workspaceRoot()): Promise<Securit
   const secrets = await scanWorkspaceForSecrets(root);
   for (const secret of secrets) {
     findings.push({
-      severity: secret.confidence === 'high' ? 'high' : 'medium',
+      severity: secret.confidence === 'high' ? 'high' : secret.confidence === 'medium' ? 'medium' : 'low',
       category: 'secrets',
       path: secret.path,
       line: secret.line,

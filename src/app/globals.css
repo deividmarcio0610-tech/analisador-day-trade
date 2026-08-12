@@ -1,0 +1,180 @@
+@import 'tailwindcss';
+
+/*
+ * VISION CODE design tokens.
+ * Dark, high-contrast, instrument-panel feel. Colours are declared once here and
+ * used through the `vc-*` utility classes so panels stay consistent.
+ */
+
+@theme {
+  --color-void: #06070a;
+  --color-surface: #0b0d13;
+  --color-surface-raised: #11141c;
+  --color-surface-hover: #171b25;
+  --color-line: #1e2330;
+  --color-line-strong: #2a3140;
+
+  --color-ink: #e6e9f0;
+  --color-ink-dim: #99a1b3;
+  --color-ink-faint: #626b7d;
+
+  --color-accent: #4dd8c0;
+  --color-accent-strong: #22b8a0;
+  --color-violet: #8b7dff;
+  --color-amber: #f0b429;
+  --color-danger: #ff6b6b;
+  --color-success: #48d597;
+  --color-info: #56a8ff;
+
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 6px;
+  border: 2px solid var(--color-void);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4356;
+}
+
+@layer components {
+  .vc-panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+  }
+
+  .vc-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-line);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-ink-dim);
+  }
+
+  .vc-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
+    font-size: 12px;
+    font-weight: 500;
+    transition: background 120ms ease, border-color 120ms ease;
+    cursor: pointer;
+  }
+  .vc-button:hover:not(:disabled) {
+    background: var(--color-surface-hover);
+    border-color: #384054;
+  }
+  .vc-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .vc-button-primary {
+    background: linear-gradient(180deg, var(--color-accent) 0%, var(--color-accent-strong) 100%);
+    border-color: transparent;
+    color: #04211c;
+    font-weight: 600;
+  }
+  .vc-button-primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, #5fe6cf 0%, #29c9af 100%);
+  }
+  .vc-button-danger {
+    border-color: #4a2530;
+    color: var(--color-danger);
+  }
+
+  .vc-input {
+    width: 100%;
+    padding: 8px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-void);
+    color: var(--color-ink);
+    font-size: 13px;
+    outline: none;
+  }
+  .vc-input:focus {
+    border-color: var(--color-accent-strong);
+    box-shadow: 0 0 0 3px rgb(34 184 160 / 0.14);
+  }
+
+  .vc-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--color-line-strong);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-ink-dim);
+    white-space: nowrap;
+  }
+
+  .vc-mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .vc-scroll {
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+
+  .vc-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .vc-row:hover {
+    background: var(--color-surface-hover);
+  }
+  .vc-row-active {
+    background: var(--color-surface-hover);
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+
+  .vc-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--color-ink-faint);
+    font-size: 12px;
+  }
+}

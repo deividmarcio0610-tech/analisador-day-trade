@@ -40,6 +40,12 @@ export interface ContractReport {
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
+function isTestFile(filePath: string): boolean {
+  return (
+    /(^|\/)(tests?|__tests__|fixtures?)\//.test(`/${filePath}`) || /\.(test|spec)\.[tj]sx?$/.test(filePath)
+  );
+}
+
 export async function analyzeApiContract(root = workspaceRoot()): Promise<ContractReport> {
   const files = await walkFiles('.', { root, extensions: ['.ts', '.tsx'], maxFiles: 4_000 });
 
@@ -47,6 +53,8 @@ export async function analyzeApiContract(root = workspaceRoot()): Promise<Contra
   const calls: ClientCall[] = [];
 
   for (const relative of files) {
+    // Endpoint literals inside tests are fixtures, not calls the application makes.
+    if (isTestFile(relative)) continue;
     let content: string;
     try {
       content = await fs.readFile(path.join(root, relative), 'utf8');
@@ -115,28 +123,64 @@ export function endpointFromRouteFile(relative: string): string {
   return tail.replace(/\/\([^)]*\)/g, '');
 }
 
-const FETCH_PATTERN = /fetch\(\s*(?:`([^`]*)`|'([^']*)'|"([^"]*)")\s*(?:,\s*\{([^}]*)\})?/g;
+/**
+ * Matches an endpoint literal together with the call that carries it.
+ *
+ * Any call is accepted — `fetch`, `new EventSource`, a client wrapper
+ * (`api.post<T>(…)`) or a project hook (`usePoll(…)`) — because real codebases
+ * reach the API through their own helpers. The call prefix is mandatory, so a
+ * bare path literal is not mistaken for a request.
+ */
+const CALL_PATTERN =
+  /(?:\bnew\s+)?\b([A-Za-z_$][\w$]*)\s*(?:\.\s*([A-Za-z_$][\w$]*)\s*)?(?:<[^()]{0,300}>)?\s*\(\s*(?:`([^`]*)`|'([^']*)'|"([^"]*)")/g;
 
+const WRAPPER_METHOD: Record<string, string> = {
+  get: 'GET',
+  post: 'POST',
+  put: 'PUT',
+  patch: 'PATCH',
+  del: 'DELETE',
+  delete: 'DELETE',
+};
+
+/**
+ * Scans the whole file rather than line by line: a call whose generic arguments
+ * or options object wrap across lines is still one call.
+ */
 export function findClientCalls(file: string, content: string): ClientCall[] {
   const calls: ClientCall[] = [];
-  const lines = content.split('\n');
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    FETCH_PATTERN.lastIndex = 0;
-    let match = FETCH_PATTERN.exec(line);
-    while (match !== null) {
-      const raw = match[1] ?? match[2] ?? match[3] ?? '';
-      const options = match[4] ?? '';
-      match = FETCH_PATTERN.exec(line);
-      if (!raw.startsWith('/api/')) continue;
-      const methodMatch = /method\s*:\s*['"`]([A-Za-z]+)['"`]/.exec(options);
-      calls.push({
-        endpoint: normalizeEndpoint(raw),
-        file,
-        line: index + 1,
-        method: (methodMatch?.[1] ?? 'GET').toUpperCase(),
-      });
-    }
+  const seen = new Set<string>();
+
+  CALL_PATTERN.lastIndex = 0;
+  let match = CALL_PATTERN.exec(content);
+  while (match !== null) {
+    const member = match[2];
+    const raw = match[3] ?? match[4] ?? match[5] ?? '';
+    const matchStart = match.index;
+    const matchEnd = CALL_PATTERN.lastIndex;
+    match = CALL_PATTERN.exec(content);
+
+    if (!raw.startsWith('/api/')) continue;
+    const endpoint = normalizeEndpoint(raw);
+    // `/api/` alone is a path prefix test, not a request to an endpoint.
+    if (endpoint.split('/').filter(Boolean).length < 2) continue;
+
+    const line = content.slice(0, matchStart).split('\n').length;
+    const key = `${endpoint}@${line}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const wrapper = member && member.toLowerCase() in WRAPPER_METHOD ? member : undefined;
+
+    // `method:` in the options object wins; then the wrapper name; then GET.
+    const rest = content.slice(matchEnd, matchEnd + 400);
+    const methodMatch = /method\s*:\s*['"`]([A-Za-z]+)['"`]/.exec(rest);
+    const method =
+      methodMatch?.[1]?.toUpperCase() ??
+      (wrapper ? WRAPPER_METHOD[wrapper.toLowerCase()] : undefined) ??
+      'GET';
+
+    calls.push({ endpoint, file, line, method });
   }
   return calls;
 }

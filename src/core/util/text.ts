@@ -1,16 +1,29 @@
 /** Text helpers shared by agents, tools and the API layer. */
 
-/** Truncate keeping head and tail, which is what matters in compiler/test output. */
+/**
+ * Truncate keeping head and tail, which is what matters in compiler/test output.
+ * The result never exceeds `maxChars`, including for very small budgets.
+ */
 export function truncateMiddle(text: string, maxChars: number): string {
+  if (maxChars <= 0) return '';
   if (text.length <= maxChars) return text;
-  const half = Math.floor((maxChars - 40) / 2);
+  if (maxChars < 80) return text.slice(0, maxChars);
+
+  const notice = (omitted: number): string => `\n... [${omitted} characters omitted] ...\n`;
+  const half = Math.floor((maxChars - notice(text.length).length) / 2);
+  if (half <= 0) return text.slice(0, maxChars);
   const omitted = text.length - half * 2;
-  return `${text.slice(0, half)}\n... [${omitted} characters omitted] ...\n${text.slice(-half)}`;
+  return `${text.slice(0, half)}${notice(omitted)}${text.slice(text.length - half)}`;
 }
 
+/** Keep the tail, which is where compiler and test failures are printed. */
 export function truncateTail(text: string, maxChars: number): string {
+  if (maxChars <= 0) return '';
   if (text.length <= maxChars) return text;
-  return `... [${text.length - maxChars} characters omitted] ...\n${text.slice(-maxChars)}`;
+  const notice = `... [${text.length - maxChars} characters omitted] ...\n`;
+  const room = maxChars - notice.length;
+  if (room <= 0) return text.slice(text.length - maxChars);
+  return `${notice}${text.slice(text.length - room)}`;
 }
 
 /**
