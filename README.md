@@ -72,6 +72,20 @@ Exposure options for a Vast.ai instance, in order of preference: an SSH tunnel
 mapped port with a gateway that enforces `VISION_AI_API_KEY`, or a public port —
 never a public port without a token.
 
+### Validating the connection
+
+```bash
+npm run dev            # one terminal
+npm run validate:ai    # another
+```
+
+It runs the whole checklist against the configured endpoint — probe, model
+listing, per-role completion, builder → reviewer round trip, a TEAM run on a real
+task with its live token stream, and a controlled failure that points the
+endpoint at a dead port to confirm the platform degrades instead of crashing (the
+original endpoint is restored afterwards). It prints the result and exits
+non-zero if anything did not pass. It must run where Vision can reach the GPU.
+
 ### What the states mean
 
 | State | Meaning |
