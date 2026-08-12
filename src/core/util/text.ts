@@ -37,12 +37,28 @@ export function extractFencedBlock(text: string, language: string): string | nul
 }
 
 /**
+ * Remove the reasoning block that thinking models (qwen3, deepseek-r1 and
+ * friends) emit before their answer. It is stripped rather than parsed: it is
+ * prose about the answer, and it routinely contains braces and code fragments
+ * that would otherwise be mistaken for the structured output.
+ *
+ * An unterminated block is dropped to the end of the text, because that is what
+ * a truncated reasoning stream looks like.
+ */
+export function stripReasoning(text: string): string {
+  const closed = text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '');
+  const unterminated = closed.replace(/<(think|thinking|reasoning)>[\s\S]*$/i, '');
+  return unterminated.trim();
+}
+
+/**
  * Parse the first JSON object/array found in a model response.
- * Handles ```json fences and leading prose. Returns null on failure.
+ * Handles ```json fences, leading prose and reasoning blocks. Null on failure.
  */
 export function extractJson<T>(text: string): T | null {
-  const fenced = extractFencedBlock(text, 'json');
-  const candidates = fenced ? [fenced, text] : [text];
+  const cleaned = stripReasoning(text);
+  const fenced = extractFencedBlock(cleaned, 'json');
+  const candidates = fenced ? [fenced, cleaned, text] : [cleaned, text];
   for (const candidate of candidates) {
     const direct = tryParse<T>(candidate.trim());
     if (direct !== null) return direct;

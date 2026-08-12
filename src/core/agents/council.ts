@@ -54,7 +54,9 @@ async function structured<S extends z.ZodTypeAny>(
     const user =
       attempt === 0
         ? options.user
-        : `${options.user}\n\nYour previous answer could not be parsed (${lastError}).\nReturn ONLY the JSON object described in the system prompt.`;
+        : `${options.user}\n\nYour previous answer could not be parsed (${lastError}).\n` +
+          'Return ONLY the JSON object described in the system prompt. ' +
+          'Do not think out loud, do not emit a reasoning block, do not add prose before or after it.';
 
     const result = await runAgentTurn({ ...options, user });
     lastRaw = result.content;

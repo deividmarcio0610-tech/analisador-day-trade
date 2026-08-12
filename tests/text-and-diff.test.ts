@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractJson, truncateMiddle, truncateTail } from '@/core/util/text';
+import { extractJson, stripReasoning, truncateMiddle, truncateTail } from '@/core/util/text';
 import { diffLines, unifiedDiff } from '@/core/util/diff';
 
 describe('model output parsing', () => {
@@ -25,6 +25,31 @@ describe('model output parsing', () => {
 
   it('returns null when there is no JSON at all', () => {
     expect(extractJson('no structured output here')).toBeNull();
+  });
+
+  // Thinking models (qwen3, deepseek-r1) put prose full of braces before the answer.
+  it('parses JSON that follows a reasoning block containing braces', () => {
+    const raw = [
+      '<think>',
+      'The shape could be { a: number, b: number }.',
+      'if (a) { return b; } — no, simpler: a + b.',
+      '</think>',
+      '{"decision":"APPROVED","findings":[]}',
+    ].join('\n');
+    expect(extractJson<{ decision: string }>(raw)).toEqual({ decision: 'APPROVED', findings: [] });
+  });
+
+  it('parses a fenced answer that follows a reasoning block', () => {
+    const raw = '<thinking>maybe { x }</thinking>\n```json\n{"summary":"ok","operations":[]}\n```';
+    expect(extractJson<{ summary: string }>(raw)?.summary).toBe('ok');
+  });
+
+  it('ignores an unterminated reasoning block', () => {
+    expect(extractJson('<think>I am still deciding { and never close')).toBeNull();
+  });
+
+  it('leaves ordinary output untouched', () => {
+    expect(stripReasoning('{"a":1}')).toBe('{"a":1}');
   });
 
   it('truncates keeping head and tail', () => {

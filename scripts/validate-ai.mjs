@@ -180,7 +180,12 @@ async function main() {
     ['DeepSeek (reviewer)', remote.reviewerModel],
   ]) {
     if (!model) {
-      line(`${label}: NOT CONFIGURED`);
+      // Surface what the server offers so the id can be copied, never guessed.
+      const candidates = serverModels.length
+        ? ` — models on the server: ${serverModels.join(', ')}`
+        : '';
+      line(`${label}: NOT CONFIGURED${candidates}`);
+      report.pending.push(`${label} has no model id configured`);
       continue;
     }
     if (serverModels.length === 0) {
