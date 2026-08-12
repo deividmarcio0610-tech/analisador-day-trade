@@ -165,13 +165,19 @@ describe('providers', () => {
   });
 
   it('reports NOT_CONFIGURED for a disabled provider instead of pretending', async () => {
-    const { setProviders } = await import('@/core/config/config');
+    // Independent of the developer's own environment: a machine with a real
+    // VISION_AI_BASE_URL exported must not change this result.
+    delete process.env.VISION_AI_BASE_URL;
+    const { setProviders, getProviders } = await import('@/core/config/config');
     const { providerStatuses } = await import('@/core/providers/registry');
     setProviders([
       { id: 'off', label: 'Disabled', kind: 'ollama', baseUrl: 'http://127.0.0.1:1', enabled: false },
     ]);
     const statuses = await providerStatuses();
-    expect(statuses[0]?.health.status).toBe('NOT_CONFIGURED');
+    const disabled = statuses.find((status) => status.id === 'off');
+    expect(disabled?.health.status).toBe('NOT_CONFIGURED');
+    // The remote provider stays present in the merge, unconfigured.
+    expect(getProviders().some((provider) => provider.id === 'vision-gpu')).toBe(true);
   });
 });
 

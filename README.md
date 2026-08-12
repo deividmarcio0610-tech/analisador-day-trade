@@ -33,26 +33,62 @@ VISION_WORKSPACE_ROOT=/path/to/project npm run dev
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
+| `VISION_AI_BASE_URL` | Model server on the GPU host (Ollama or OpenAI-compatible) | — |
+| `VISION_QWEN_MODEL` | Model id for the **builder** role | — |
+| `VISION_DEEPSEEK_MODEL` | Model id for the **reviewer** role | — |
+| `VISION_AI_TIMEOUT` | Completion timeout in ms (1000 – 3600000) | `600000` |
+| `VISION_AI_API_KEY` | Bearer token, when the endpoint requires one | — |
 | `VISION_WORKSPACE_ROOT` | Directory the agent may read, write and run commands in | `process.cwd()` |
 | `VISION_DATA_DIR` | Where the SQLite database and checkpoints live | `<workspace>/.vision` |
-| `OLLAMA_BASE_URL` | Ollama endpoint | `http://127.0.0.1:11434` |
-| `VLLM_BASE_URL` | vLLM endpoint | `http://127.0.0.1:8000/v1` |
-| `OPENAI_COMPATIBLE_BASE_URL` | Any OpenAI-compatible endpoint | `http://127.0.0.1:8080/v1` |
+| `OLLAMA_BASE_URL` | Local Ollama endpoint (fallback provider) | `http://127.0.0.1:11434` |
+| `VLLM_BASE_URL` | Local vLLM endpoint | `http://127.0.0.1:8000/v1` |
+| `OPENAI_COMPATIBLE_BASE_URL` | Any other OpenAI-compatible endpoint | `http://127.0.0.1:8080/v1` |
 
-API keys are never stored in the database or sent to the browser: a provider
-declares the **name** of an environment variable, and the server reads it at call
-time.
+Start from `.env.example`. API keys are never stored in the database or sent to
+the browser: the server reads the environment variable at call time.
 
-Suggested models (any instruct/coder model works):
+## Connecting a remote GPU (Vast.ai and friends)
 
-```bash
-ollama pull qwen2.5-coder:14b     # builder / planner
-ollama pull deepseek-r1:14b       # reviewer / challenge rounds
+The models run on the GPU host; Vision talks to them over HTTP.
+
+```
+Vision Code (web) → Vision backend → GPU endpoint → Ollama or vLLM → Qwen (builder) · DeepSeek (reviewer)
 ```
 
-Then set them per role in **Settings**. With no model server reachable, every
-screen still works — providers report `OFFLINE` or `NOT CONFIGURED`, and the
-tools (filesystem, terminal, git, tests, analysis) run normally.
+1. On the GPU host, serve the models with Ollama (`http://…:11434`) or vLLM
+   (`http://…:8000/v1`).
+2. Put the endpoint and the two model ids in `.env.local`, **or** paste them into
+   **Settings → Remote GPU** — a Vast.ai instance gets a new host and port on
+   every restart, and the Settings values take effect without restarting Vision.
+3. Press **Test connection**. It runs the real round trip: the builder is asked
+   for a small patch and the reviewer reviews that patch. Each stage is only
+   `ONLINE` when its content was usable.
+
+The endpoint dialect is detected, not assumed: Vision probes `/api/tags`,
+`/models` and `/v1/models` and uses whichever answers.
+
+Exposure options for a Vast.ai instance, in order of preference: an SSH tunnel
+(`ssh -N -L 11434:127.0.0.1:11434 …`, then use `http://127.0.0.1:11434`), a
+mapped port with a gateway that enforces `VISION_AI_API_KEY`, or a public port —
+never a public port without a token.
+
+### What the states mean
+
+| State | Meaning |
+| --- | --- |
+| `ONLINE` | The model answered a real completion with usable content |
+| `OFFLINE` | The host did not answer: refused, timed out, DNS failure |
+| `ERROR` | The host answered and something is wrong: key rejected, model missing, empty or wrong-model answer |
+| `NOT_CONFIGURED` | No endpoint or no model id was provided |
+
+An HTTP 200 is never enough for `ONLINE`: the answer must contain content, and
+when the server reports which model produced it, it must be the one requested.
+Temporary failures are retried with exponential backoff; a rejected key is not.
+If the GPU goes away, the platform shows **GPU/MODEL UNAVAILABLE**, blocks
+council runs, and keeps the workspace, terminal, git, tests and analysis working.
+
+`GET /api/ai/diagnostics` returns provider, masked endpoint, detected dialect,
+models, latency, per-role verification and the last failure — never the key.
 
 ## Verification
 

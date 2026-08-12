@@ -5,6 +5,7 @@ import { runTournament } from './tournament';
 import { profileFor } from './modes';
 import { currentProject } from '@/core/db/project-repo';
 import { getOrchestratorConfig } from '@/core/config/config';
+import { roleUnavailableReason } from '@/core/providers/ai-health';
 import { logger } from '@/core/logging/logger';
 import type { CheckKind } from '@/core/tools/verification';
 
@@ -34,6 +35,22 @@ export function startJob(input: StartJobInput): Job {
   });
 
   const profile = profileFor(mode);
+
+  // Preflight: a council run needs models. When they are not available the job
+  // is BLOCKED with the reason instead of failing deep inside an agent turn —
+  // and the rest of the platform keeps working.
+  const blocked = [roleUnavailableReason('builder'), roleUnavailableReason('reviewer')].filter(
+    (reason): reason is string => reason !== null,
+  );
+  if (blocked.length > 0) {
+    const message = [...new Set(blocked)].join(' · ');
+    logger.warn('runner', `job ${job.id} blocked: ${message}`, { taskId: job.id });
+    emit(job.id, 'log', { level: 'ERROR', message });
+    emit(job.id, 'job.error', { message, blocked: true });
+    setJobState(job.id, 'BLOCKED', message);
+    return job;
+  }
+
   const run = profile.tournament
     ? runTournament({
         job,

@@ -52,14 +52,23 @@ export default function DashboardPage() {
               <div className="p-4"><Spinner label="loading" /></div>
             ) : (
               <div className="px-2 py-2">
-                {data.agents.map((agent) => (
-                  <div key={agent.role} className="flex items-center gap-2 rounded px-2 py-1.5">
-                    <StatusDot status={agent.online} />
-                    <span className="w-[74px] text-[12px] capitalize text-ink">{agent.role}</span>
-                    <span className="vc-mono truncate text-[11.5px] text-ink-dim">{agent.model}</span>
-                    <span className="ml-auto text-[10.5px] text-ink-faint">{agent.providerId}</span>
+                {data.ai.roles.map((role) => (
+                  <div key={role.role} className="flex items-center gap-2 rounded px-2 py-1.5" title={role.detail}>
+                    <StatusDot status={role.status} />
+                    <span className="w-[74px] text-[12px] capitalize text-ink">{role.role}</span>
+                    <span className="vc-mono truncate text-[11.5px] text-ink-dim">
+                      {role.model || 'no model configured'}
+                    </span>
+                    <span className="ml-auto text-[10.5px] text-ink-faint">{data.ai.provider.id}</span>
                   </div>
                 ))}
+                <div className="flex items-center gap-2 rounded px-2 py-1.5" title={data.ai.judge.detail}>
+                  <StatusDot status={data.ai.judge.status === 'READY' ? 'ONLINE' : 'NOT_CONFIGURED'} />
+                  <span className="w-[74px] text-[12px] text-ink">judge</span>
+                  <span className="text-[11.5px] text-ink-dim">
+                    deterministic · {data.ai.judge.status}
+                  </span>
+                </div>
                 <div className="mt-2 border-t border-line px-2 pt-2 text-[11px] text-ink-faint">
                   Mode {data.orchestrator.defaultMode} · max {data.orchestrator.maxRounds} round(s) ·{' '}
                   {data.orchestrator.autoApplyPatches ? 'auto-apply on' : 'patches need approval'}
@@ -182,18 +191,15 @@ export default function DashboardPage() {
           </Panel>
         </div>
 
-        {data && data.providers.some((provider) => provider.health.status !== 'ONLINE') && (
+        {data && data.ai.server.status !== 'ONLINE' && (
           <div className="mt-3 rounded-lg border border-amber/30 bg-amber/10 px-4 py-3 text-[12px] text-amber">
-            <strong>Models not fully available.</strong>{' '}
-            {data.providers
-              .filter((provider) => provider.health.status !== 'ONLINE')
-              .map((provider) => `${provider.label}: ${provider.health.status} (${provider.health.detail})`)
-              .join(' · ')}
-            . Configure endpoints in{' '}
+            <strong>GPU/MODEL UNAVAILABLE</strong> — {data.ai.server.status}: {data.ai.server.detail}. Set the
+            endpoint and models in{' '}
             <Link href="/settings" className="underline">
               Settings
             </Link>
-            . Tools, verification and analysis run without models; the council does not.
+            . Workspace, terminal, git, tests and analysis keep working; council runs are blocked until the
+            models answer.
           </div>
         )}
 

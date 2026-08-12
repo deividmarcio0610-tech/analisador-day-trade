@@ -3,6 +3,8 @@ import {
   getProviderConfig,
   getProviders,
   providerCredentialsReady,
+  providerRequiresKey,
+  REMOTE_PROVIDER_ID,
   type ProviderConfig,
 } from '@/core/config/config';
 import { OllamaProvider } from './ollama-provider';
@@ -28,22 +30,34 @@ export function createProvider(config: ProviderConfig): ModelProvider {
 }
 
 export class ProviderNotConfiguredError extends Error {
-  constructor(readonly providerId: string, readonly reason: string) {
+  constructor(
+    readonly providerId: string,
+    readonly reason: string,
+  ) {
     super(`Provider "${providerId}" is not configured: ${reason}`);
     this.name = 'ProviderNotConfiguredError';
   }
 }
 
+/** Why a provider cannot be used, or null when it can. */
+export function providerUnavailableReason(config: ProviderConfig): string | null {
+  if (config.baseUrl.trim().length === 0) {
+    return config.id === REMOTE_PROVIDER_ID
+      ? 'VISION_AI_BASE_URL is not set'
+      : 'no endpoint configured';
+  }
+  if (!config.enabled) return 'provider disabled in settings';
+  if (providerRequiresKey(config) && !providerCredentialsReady(config)) {
+    return `environment variable ${config.apiKeyEnv} is not set`;
+  }
+  return null;
+}
+
 export function getProvider(id: string): ModelProvider {
   const config = getProviderConfig(id);
   if (!config) throw new ProviderNotConfiguredError(id, 'unknown provider id');
-  if (!config.enabled) throw new ProviderNotConfiguredError(id, 'provider disabled in settings');
-  if (!providerCredentialsReady(config)) {
-    throw new ProviderNotConfiguredError(
-      id,
-      `environment variable ${config.apiKeyEnv} is not set`,
-    );
-  }
+  const reason = providerUnavailableReason(config);
+  if (reason) throw new ProviderNotConfiguredError(id, reason);
   return createProvider(config);
 }
 
@@ -56,7 +70,7 @@ export interface ProviderStatus {
   health: HealthReport;
 }
 
-/** Health of every configured provider. Disabled ones report NOT_CONFIGURED. */
+/** Health of every configured provider. Unusable ones report NOT_CONFIGURED. */
 export async function providerStatuses(signal?: AbortSignal): Promise<ProviderStatus[]> {
   const configs = getProviders();
   return Promise.all(
@@ -68,18 +82,8 @@ export async function providerStatuses(signal?: AbortSignal): Promise<ProviderSt
         baseUrl: config.baseUrl,
         enabled: config.enabled,
       };
-      if (!config.enabled) {
-        return {
-          ...base,
-          health: notConfigured('provider disabled in settings'),
-        };
-      }
-      if (!providerCredentialsReady(config)) {
-        return {
-          ...base,
-          health: notConfigured(`environment variable ${config.apiKeyEnv} is not set`),
-        };
-      }
+      const reason = providerUnavailableReason(config);
+      if (reason) return { ...base, health: notConfigured(reason) };
       const provider = createProvider(config);
       return { ...base, health: await provider.health(signal) };
     }),

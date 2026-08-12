@@ -6,6 +6,9 @@ import {
   setOrchestratorConfig,
   setProviders,
   providerCredentialsReady,
+  getRemoteSettings,
+  setRemoteOverride,
+  clampTimeout,
 } from '@/core/config/config';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +32,19 @@ const agentSchema = z.object({
   maxTokens: z.number().int().min(256).max(200_000),
 });
 
+/**
+ * Remote GPU settings. The API key is intentionally absent: it is read from the
+ * server environment and can never be set or read through this endpoint.
+ */
+const remoteSchema = z.object({
+  baseUrl: z.string().max(500).optional(),
+  builderModel: z.string().max(200).optional(),
+  reviewerModel: z.string().max(200).optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
 const bodySchema = z.object({
+  remote: remoteSchema.optional(),
   providers: z.array(providerSchema).optional(),
   agents: z.array(agentSchema).optional(),
   orchestrator: z
@@ -49,6 +64,7 @@ export async function GET(): Promise<Response> {
     const config = getConfig();
     return ok({
       ...config,
+      remote: getRemoteSettings(),
       // Never send secrets: only whether the env var backing a provider is present.
       providers: config.providers.map((provider) => ({
         ...provider,
@@ -63,10 +79,16 @@ export async function GET(): Promise<Response> {
 export async function PUT(request: Request): Promise<Response> {
   try {
     const body = await parseBody(request, bodySchema);
+    if (body.remote) {
+      setRemoteOverride({
+        ...body.remote,
+        timeoutMs: body.remote.timeoutMs === undefined ? undefined : clampTimeout(body.remote.timeoutMs),
+      });
+    }
     if (body.providers) setProviders(body.providers);
     if (body.agents) setAgents(body.agents);
     if (body.orchestrator) setOrchestratorConfig(body.orchestrator);
-    return ok(getConfig());
+    return ok({ ...getConfig(), remote: getRemoteSettings() });
   } catch (error) {
     return handleError('api.settings', error);
   }

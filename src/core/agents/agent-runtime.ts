@@ -102,6 +102,8 @@ export async function runAgentTurn(options: AgentTurnOptions): Promise<ChatResul
     return {
       content,
       model: route.config.model,
+      // Streaming chunks do not carry a model id in either dialect.
+      reportedModel: null,
       provider: route.provider.id,
       durationMs,
       promptTokens: null,

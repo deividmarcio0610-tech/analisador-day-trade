@@ -46,9 +46,79 @@ export interface GitStatusView {
   files: Array<{ path: string; index: string; worktree: string; staged: boolean; untracked: boolean }>;
 }
 
+export interface ModelVerificationView {
+  role: string;
+  model: string;
+  status: HealthStatus;
+  latencyMs: number | null;
+  detail: string;
+  reportedModel: string | null;
+  sample: string | null;
+  checkedAt: string;
+}
+
+export interface AiStatusView {
+  configured: boolean;
+  provider: {
+    id: string;
+    label: string;
+    kind: string;
+    resolvedKind: string | null;
+    maskedEndpoint: string;
+    endpointConfigured: boolean;
+    apiKeyEnv: string | null;
+    apiKeyConfigured: boolean;
+    timeoutMs: number;
+  };
+  server: {
+    status: HealthStatus;
+    detail: string;
+    latencyMs: number | null;
+    models: string[];
+    probedPath: string | null;
+  };
+  roles: ModelVerificationView[];
+  judge: { status: 'READY' | 'BLOCKED'; detail: string };
+  lastFailure: { at: string; kind: string; status: number | null; message: string } | null;
+  checkedAt: string;
+}
+
+export interface PipelineStageView {
+  name: string;
+  label: string;
+  status: HealthStatus;
+  detail: string;
+  durationMs: number | null;
+  model: string | null;
+  reportedModel: string | null;
+  sample: string | null;
+}
+
+export interface PipelineCheckView {
+  ok: boolean;
+  stages: PipelineStageView[];
+  startedAt: string;
+  finishedAt: string;
+  taskId: string;
+}
+
+export interface RemoteSettingsShape {
+  baseUrl: string;
+  baseUrlSource: 'settings' | 'env' | 'unset';
+  builderModel: string;
+  builderModelSource: 'settings' | 'env' | 'unset';
+  reviewerModel: string;
+  reviewerModelSource: 'settings' | 'env' | 'unset';
+  timeoutMs: number;
+  apiKeyEnv: string;
+  apiKeyConfigured: boolean;
+  kind: string;
+}
+
 export interface SystemStatus {
   project: Project;
   workspaceRoot: string;
+  ai: AiStatusView;
   providers: ProviderStatusView[];
   agents: AgentStatusView[];
   orchestrator: {

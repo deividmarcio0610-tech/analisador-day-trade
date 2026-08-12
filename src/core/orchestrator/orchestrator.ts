@@ -20,6 +20,7 @@ import {
   AgentOutputError,
 } from '@/core/agents/council';
 import { AgentUnavailableError } from '@/core/agents/agent-runtime';
+import { ProviderHttpError } from '@/core/providers/http';
 import { judge } from '@/core/agents/judge';
 import { previewPatch, renderPatchForReview, storePatch, applyPatch } from './patch-service';
 import { runVerificationSuite, type CheckKind } from '@/core/tools/verification';
@@ -392,8 +393,12 @@ export async function runOrchestration(request: RunRequest): Promise<RunOutcome>
     emit(job.id, 'job.done', { summary: outcome.summary, verdict: report.verdict });
     return outcome;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const blocked = error instanceof AgentUnavailableError;
+    // A model that cannot be reached is not a failed task: the work never ran.
+    // It is BLOCKED, and it says so with the operational phrase the UI shows.
+    const unreachable = error instanceof ProviderHttpError && (error.kind === 'unreachable' || error.kind === 'timeout');
+    const blocked = error instanceof AgentUnavailableError || unreachable;
+    const raw = error instanceof Error ? error.message : String(error);
+    const message = unreachable ? `GPU/MODEL UNAVAILABLE — ${raw}` : raw;
     logger.error('orchestrator', message, { taskId: job.id });
     emit(job.id, 'job.error', { message, blocked });
     if (error instanceof AgentOutputError) {

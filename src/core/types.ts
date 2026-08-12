@@ -11,10 +11,16 @@ export type AgentRole = 'planner' | 'builder' | 'reviewer' | 'judge';
 export type ProviderKind = 'ollama' | 'vllm' | 'openai-compatible';
 
 /**
- * Health of an external dependency. NOT_CONFIGURED is a first class state: the
- * product never pretends an integration exists when it has not been set up.
+ * Health of an external dependency. Each state means something different and
+ * the product never collapses them:
+ *
+ * - `ONLINE`         verified end to end (reachable *and* it answered correctly)
+ * - `OFFLINE`        unreachable: refused, timed out, DNS failure
+ * - `ERROR`          reachable but wrong: auth rejected, model missing, bad answer
+ * - `NOT_CONFIGURED` nothing was set up to reach in the first place
+ * - `UNKNOWN`        not checked yet
  */
-export type HealthStatus = 'ONLINE' | 'OFFLINE' | 'UNKNOWN' | 'NOT_CONFIGURED';
+export type HealthStatus = 'ONLINE' | 'OFFLINE' | 'ERROR' | 'UNKNOWN' | 'NOT_CONFIGURED';
 
 export interface HealthReport {
   status: HealthStatus;
@@ -22,6 +28,24 @@ export interface HealthReport {
   detail: string;
   checkedAt: string;
   models?: string[];
+}
+
+/**
+ * Verification of a single model: an actual completion was requested and the
+ * answer was inspected. `ONLINE` here means the model replied with usable
+ * content, not merely that the HTTP call returned 200.
+ */
+export interface ModelVerification {
+  role: AgentRole;
+  model: string;
+  status: HealthStatus;
+  latencyMs: number | null;
+  detail: string;
+  /** Model id echoed by the server, when it reports one. */
+  reportedModel: string | null;
+  /** First characters of the answer, for evidence that it really replied. */
+  sample: string | null;
+  checkedAt: string;
 }
 
 /** Verdicts produced by the Engineering Judge, always backed by real evidence. */
@@ -69,11 +93,18 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** Overrides the provider's configured timeout (health probes use a short one). */
+  timeoutMs?: number;
+  /** Attempts for retryable failures; the provider applies exponential backoff. */
+  attempts?: number;
 }
 
 export interface ChatResult {
   content: string;
+  /** Model that was requested. */
   model: string;
+  /** Model the server says it used, when it reports one. Never assumed. */
+  reportedModel: string | null;
   provider: string;
   durationMs: number;
   promptTokens: number | null;

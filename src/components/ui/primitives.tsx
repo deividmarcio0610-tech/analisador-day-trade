@@ -35,6 +35,8 @@ export function Panel({
 const HEALTH_COLOR: Record<HealthStatus, string> = {
   ONLINE: 'text-success',
   OFFLINE: 'text-danger',
+  // Reachable but wrong: distinct from unreachable, because the fix is different.
+  ERROR: 'text-violet',
   UNKNOWN: 'text-ink-faint',
   NOT_CONFIGURED: 'text-amber',
 };

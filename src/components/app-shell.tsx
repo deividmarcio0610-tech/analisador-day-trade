@@ -65,9 +65,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { data } = usePoll<SystemStatus>('/api/system', 15_000);
 
-  const agents = data?.agents ?? [];
-  const builder = agents.find((agent) => agent.role === 'builder');
-  const reviewer = agents.find((agent) => agent.role === 'reviewer');
+  // Role status comes from the AI health probe, not from configuration.
+  const builder = data?.ai.roles.find((role) => role.role === 'builder');
+  const reviewer = data?.ai.roles.find((role) => role.role === 'reviewer');
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-void">
@@ -120,15 +120,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="flex shrink-0 items-center gap-3 text-[11px]">
             <HeaderStat
-              label={builder ? `BUILDER · ${builder.model}` : 'BUILDER'}
-              status={builder?.online ?? 'UNKNOWN'}
+              label={builder?.model ? `BUILDER · ${builder.model}` : 'BUILDER'}
+              status={builder?.status ?? 'UNKNOWN'}
+              title={builder?.detail}
             />
             <HeaderStat
-              label={reviewer ? `REVIEWER · ${reviewer.model}` : 'REVIEWER'}
-              status={reviewer?.online ?? 'UNKNOWN'}
+              label={reviewer?.model ? `REVIEWER · ${reviewer.model}` : 'REVIEWER'}
+              status={reviewer?.status ?? 'UNKNOWN'}
+              title={reviewer?.detail}
             />
-            <Link href="/gpu" className="flex items-center gap-1.5 text-ink-dim hover:text-ink">
-              <StatusDot status={providersStatus(data)} />
+            <Link
+              href="/gpu"
+              className="flex items-center gap-1.5 text-ink-dim hover:text-ink"
+              title={data?.ai.server.detail}
+            >
+              <StatusDot status={data?.ai.server.status ?? 'UNKNOWN'} />
               GPU
             </Link>
             <Link href="/vps" className="flex items-center gap-1.5 text-ink-dim hover:text-ink">
@@ -148,18 +154,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function HeaderStat({ label, status }: { label: string; status: HealthStatus }) {
+function HeaderStat({
+  label,
+  status,
+  title,
+}: {
+  label: string;
+  status: HealthStatus;
+  title?: string;
+}) {
   return (
-    <span className="flex items-center gap-1.5 text-ink-dim" title={status}>
+    <span className="flex items-center gap-1.5 text-ink-dim" title={title ? `${status} — ${title}` : status}>
       <StatusDot status={status} />
       <span className="max-w-[190px] truncate vc-mono text-[11px]">{label}</span>
     </span>
   );
-}
-
-function providersStatus(data: SystemStatus | null): HealthStatus {
-  if (!data) return 'UNKNOWN';
-  if (data.providers.some((provider) => provider.health.status === 'ONLINE')) return 'ONLINE';
-  if (data.providers.every((provider) => provider.health.status === 'NOT_CONFIGURED')) return 'NOT_CONFIGURED';
-  return 'OFFLINE';
 }

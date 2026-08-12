@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import clsx from 'clsx';
 import { CommandBar } from '@/components/command-bar';
 import { CouncilView } from '@/components/council-view';
+import { AiStatusBar } from '@/components/ai-status';
 import { useJobStream } from '@/components/hooks/use-job-stream';
 import { usePoll } from '@/components/hooks/use-poll';
 import { Empty, Panel, Spinner } from '@/components/ui/primitives';
@@ -49,6 +50,9 @@ function CouncilScreen() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <div className="px-3 pt-3">
+        <AiStatusBar />
+      </div>
       <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-3 p-3">
         <Panel
           title="Jobs"

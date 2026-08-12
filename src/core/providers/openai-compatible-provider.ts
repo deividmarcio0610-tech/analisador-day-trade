@@ -8,16 +8,21 @@ import type {
   StreamChunk,
 } from '@/core/types';
 import type { ProviderConfig } from '@/core/config/config';
+import { DEFAULT_TIMEOUT_MS } from '@/core/config/config';
 import { joinUrl, readLines, request, requestJson } from './http';
+import { statusForFailure } from './failure';
 
 interface OpenAiModelsResponse {
   data?: Array<{ id?: string; owned_by?: string }>;
 }
 
 interface OpenAiChatResponse {
+  model?: string;
   choices?: Array<{ message?: { content?: string }; delta?: { content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
+
+const PROBE_TIMEOUT_MS = 8_000;
 
 /**
  * Provider for any endpoint speaking the OpenAI chat-completions dialect.
@@ -28,12 +33,14 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   readonly kind: ProviderKind;
   readonly baseUrl: string;
   private readonly apiKeyEnv?: string;
+  private readonly timeoutMs: number;
 
   constructor(config: ProviderConfig) {
     this.id = config.id;
     this.kind = config.kind === 'vllm' ? 'vllm' : 'openai-compatible';
     this.baseUrl = config.baseUrl;
     this.apiKeyEnv = config.apiKeyEnv;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   private headers(): Record<string, string> {
@@ -54,7 +61,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       };
     } catch (error) {
       return {
-        status: 'OFFLINE',
+        status: statusForFailure(error),
         latencyMs: Date.now() - startedAt,
         detail: error instanceof Error ? error.message : String(error),
         checkedAt: new Date().toISOString(),
@@ -64,8 +71,9 @@ export class OpenAiCompatibleProvider implements ModelProvider {
 
   async models(signal?: AbortSignal): Promise<ModelDescriptor[]> {
     const data = await requestJson<OpenAiModelsResponse>(joinUrl(this.baseUrl, 'models'), {
-      timeoutMs: 5_000,
+      timeoutMs: PROBE_TIMEOUT_MS,
       headers: this.headers(),
+      attempts: 2,
       signal,
     });
     return (data.data ?? [])
@@ -77,13 +85,15 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     const startedAt = Date.now();
     const data = await requestJson<OpenAiChatResponse>(joinUrl(this.baseUrl, 'chat/completions'), {
       body: this.payload(options, false),
-      timeoutMs: 600_000,
+      timeoutMs: options.timeoutMs ?? this.timeoutMs,
       headers: this.headers(),
+      attempts: options.attempts ?? 3,
       signal: options.signal,
     });
     return {
       content: data.choices?.[0]?.message?.content ?? '',
       model: options.model,
+      reportedModel: data.model ?? null,
       provider: this.id,
       durationMs: Date.now() - startedAt,
       promptTokens: data.usage?.prompt_tokens ?? null,
@@ -94,8 +104,9 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   async *stream(options: ChatOptions): AsyncIterable<StreamChunk> {
     const response = await request(joinUrl(this.baseUrl, 'chat/completions'), {
       body: this.payload(options, true),
-      timeoutMs: 600_000,
+      timeoutMs: options.timeoutMs ?? this.timeoutMs,
       headers: this.headers(),
+      attempts: options.attempts ?? 3,
       signal: options.signal,
     });
     for await (const line of readLines(response)) {

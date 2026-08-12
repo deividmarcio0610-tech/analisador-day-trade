@@ -1,5 +1,6 @@
 import { handleError, ok } from '../_lib/http';
 import { providerStatuses } from '@/core/providers/registry';
+import { aiStatus } from '@/core/providers/ai-health';
 import { getAgents, getOrchestratorConfig } from '@/core/config/config';
 import { detectStack } from '@/core/tools/stack-detect';
 import { gitStatus } from '@/core/tools/git';
@@ -19,15 +20,19 @@ export async function GET(): Promise<Response> {
     singleton('orphan-reconcile', () => reconcileOrphanJobs());
 
     const project = currentProject();
-    const [providers, stack, git] = await Promise.all([
+    // The polled header only probes the endpoint; model completions are verified
+    // on demand from Settings or the AI Council, not on every poll.
+    const [providers, stack, git, ai] = await Promise.all([
       providerStatuses(),
       detectStack(),
       gitStatus(),
+      aiStatus({ verifyModels: false }),
     ]);
 
     return ok({
       project,
       workspaceRoot: workspaceRoot(),
+      ai,
       providers,
       agents: getAgents().map((agent) => ({
         role: agent.role,

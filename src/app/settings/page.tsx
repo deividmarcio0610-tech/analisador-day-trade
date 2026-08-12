@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import { usePoll } from '@/components/hooks/use-poll';
 import { Empty, ErrorNote, Panel, StatusDot } from '@/components/ui/primitives';
-import { api } from '@/lib/api';
+import { AiDiagnosticsPanel } from '@/components/ai-status';
+import { api, formatDuration } from '@/lib/api';
 import type { HealthStatus } from '@/core/types';
+import type { RemoteSettingsShape } from '@/lib/types';
 
 interface ProviderConfig {
   id: string;
@@ -28,6 +30,7 @@ interface AgentConfig {
 interface SettingsResponse {
   providers: ProviderConfig[];
   agents: AgentConfig[];
+  remote: RemoteSettingsShape;
   orchestrator: {
     maxRounds: number;
     defaultMode: string;
@@ -60,6 +63,14 @@ export default function SettingsPage() {
     setNotice(null);
     try {
       await api.put('/api/settings', {
+        // Only the editable half of the remote config is sent; the API key lives
+        // in the server environment and is never handled by the browser.
+        remote: {
+          baseUrl: draft.remote.baseUrl,
+          builderModel: draft.remote.builderModel,
+          reviewerModel: draft.remote.reviewerModel,
+          timeoutMs: draft.remote.timeoutMs,
+        },
         providers: draft.providers.map(({ credentialsReady: _credentialsReady, ...provider }) => provider),
         agents: draft.agents,
         orchestrator: draft.orchestrator,
@@ -83,6 +94,24 @@ export default function SettingsPage() {
     );
   }
 
+  function SourceNote({ source, variable }: { source: string; variable: string }) {
+    if (source === 'settings') {
+      return (
+        <span className="mt-1 block text-[10.5px] text-ink-faint">
+          set here — clear the field to fall back to {variable}
+        </span>
+      );
+    }
+    if (source === 'env') {
+      return <span className="mt-1 block text-[10.5px] text-ink-faint">from {variable}</span>;
+    }
+    return (
+      <span className="mt-1 block text-[10.5px] text-amber">
+        not configured — set it here or as {variable}
+      </span>
+    );
+  }
+
   const healthFor = (id: string): HealthStatus =>
     system.data?.providers.find((provider) => provider.id === id)?.health.status ?? 'UNKNOWN';
   const modelsFor = (id: string): string[] =>
@@ -91,6 +120,83 @@ export default function SettingsPage() {
   return (
     <div className="vc-scroll h-full p-4">
       <ErrorNote error={settings.error} />
+
+      <Panel title="Remote GPU (Qwen builder · DeepSeek reviewer)" className="mb-3">
+        <div className="grid gap-3 px-4 py-3 md:grid-cols-2">
+          <label className="text-[11.5px] text-ink-dim md:col-span-2">
+            Endpoint URL
+            <input
+              className="vc-input mt-1 vc-mono"
+              placeholder="https://<host>:<port>  or  https://<host>:<port>/v1"
+              value={draft.remote.baseUrl}
+              onChange={(event) =>
+                setDraft({ ...draft, remote: { ...draft.remote, baseUrl: event.target.value } })
+              }
+            />
+            <SourceNote source={draft.remote.baseUrlSource} variable="VISION_AI_BASE_URL" />
+          </label>
+
+          <label className="text-[11.5px] text-ink-dim">
+            Builder model (Qwen)
+            <input
+              className="vc-input mt-1 vc-mono"
+              placeholder="exact model id served by the endpoint"
+              value={draft.remote.builderModel}
+              onChange={(event) =>
+                setDraft({ ...draft, remote: { ...draft.remote, builderModel: event.target.value } })
+              }
+            />
+            <SourceNote source={draft.remote.builderModelSource} variable="VISION_QWEN_MODEL" />
+          </label>
+
+          <label className="text-[11.5px] text-ink-dim">
+            Reviewer model (DeepSeek)
+            <input
+              className="vc-input mt-1 vc-mono"
+              placeholder="exact model id served by the endpoint"
+              value={draft.remote.reviewerModel}
+              onChange={(event) =>
+                setDraft({ ...draft, remote: { ...draft.remote, reviewerModel: event.target.value } })
+              }
+            />
+            <SourceNote source={draft.remote.reviewerModelSource} variable="VISION_DEEPSEEK_MODEL" />
+          </label>
+
+          <label className="text-[11.5px] text-ink-dim">
+            Completion timeout (ms)
+            <input
+              type="number"
+              min={1000}
+              max={3_600_000}
+              step={1000}
+              className="vc-input mt-1"
+              value={draft.remote.timeoutMs}
+              onChange={(event) =>
+                setDraft({ ...draft, remote: { ...draft.remote, timeoutMs: Number(event.target.value) } })
+              }
+            />
+            <span className="mt-1 block text-[10.5px] text-ink-faint">
+              {formatDuration(draft.remote.timeoutMs)} · falls back to VISION_AI_TIMEOUT
+            </span>
+          </label>
+
+          <div className="text-[11.5px] text-ink-dim md:col-span-2">
+            API key:{' '}
+            {draft.remote.apiKeyConfigured ? (
+              <span className="text-success">{draft.remote.apiKeyEnv} is set on the server</span>
+            ) : (
+              <span className="text-amber">
+                {draft.remote.apiKeyEnv} is not set — the endpoint is treated as open
+              </span>
+            )}
+            . The key is read server side only and is never sent to this page.
+          </div>
+        </div>
+      </Panel>
+
+      <div className="mb-3">
+        <AiDiagnosticsPanel />
+      </div>
 
       <Panel title="Providers" className="mb-3">
         <div className="px-4 py-3">
